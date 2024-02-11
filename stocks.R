@@ -20,6 +20,9 @@ new_price = function(code, price){
   raw_dfs[[i]]$Adj.Close[1] = price
   raw_dfs <<- raw_dfs
 }
+# new_price("AAPL", 190.00)
+# new_price("IBM", 183.00)
+
 # ----------------- FAST --------------------
 execute = function(n, test_size = 0.3, filter = codes){
   MAX_LENGTH = n
@@ -50,36 +53,168 @@ execute = function(n, test_size = 0.3, filter = codes){
   }
   dfs.train = dfs.test
   
-  ### TRAIN ###
+  create_X = function(dfs, days){
+    X = c()
+    for (day in days){
+      new_row_X = c()
+      for (i in 1:length(dfs)){
+        df = dfs[[i]]
+        code = codes[i]
+        close = log(df$Adj.Close)
+        new_row_X = cbind(new_row_X,
+                          t(close[day] - close[(day+10):(day+1)])
+        )
+      }
+      X = rbind(X, new_row_X)
+    }
+    X = cbind(X, 1)
+    return(X)
+  }
   
-  X = c()
-  Y = c() # 1 day, 2 day, 3 day, 4 day
-  for (day in train_days){
-    new_row_X = c()
-    new_row_Y = c()
-    for (i in 1:length(dfs.train)){
-      df = dfs.train[[i]]
+  create_Y = function(dfs, days, strategies, stock_names){
+    Ys = list()
+    for (i in 1:length(dfs)){
       code = codes[i]
-      close = log(df$Adj.Close)
-      new_row_X = cbind(new_row_X,
-                        t(close[day] - close[c(day+10, day+6, day+3, day+1)]))
-                        # df$Volume[day]/1e8)
       if (is.element(code, filter)){
-        new_row_Y = cbind(new_row_Y,
-                          t(close[c(day-1, day-2, day-3, day-4)] - close[day])
-                          )
+        df = dfs[[i]]
+        close = log(df$Adj.Close)
+        for (strategy in 1:n_strategies){
+          j = which(strategies == strategy & stock_names == code)
+          stopifnot(length(j) == 1)
+          Ys[[j]] = close[days-strategy] - close[days]
+        }
       }
     }
-    X = rbind(X, new_row_X)
-    Y = rbind(Y, new_row_Y)
+    return(Ys)
   }
-  X = cbind(X, 1)
   
-  Hat = solve(t(X) %*% X)  %*% t(X)
-  beta_hat = Hat %*% Y
-  Y_hat = X %*% beta_hat
+  ### TRAIN ###
   
-  ### COVARIANCES ###
+  train = function(dfs, p = 15, n_strategies = 4){
+    
+    # CREATE THE X MATRIX, COMMON TO ALL ENSEMBLES
+    X = create_X(dfs, train_days)
+    
+    # CREATE THE Y VECTORS
+    strategies = rep(1:n_strategies, length(filter))
+    stock_names = rep(filter, each = n_strategies)
+    Ys = create_Y(dfs, train_days, strategies, stock_names)
+    stopifnot(length(Ys) == length(strategies))
+    
+    # CREATE THE FEATURES
+    print("Reducing dimension.")
+    create_orthogonal_matrix = function(basis){
+      eye = diag(rep(1,nrow(basis)))
+      for (i in 1:ncol(basis)){
+        basis[,i] = basis[,i] / norm(basis[,i], type="2")
+      }
+      while(TRUE){
+        j = ncol(basis) + 1
+        if (j > nrow(basis)){
+          return(basis)
+        }
+        v = eye[,j]
+        for (i in 1:(j-1)){
+          u = basis[,i]
+          v = v - as.numeric(t(u) %*% v)*u
+          v = v/norm(v,type="2")
+        }
+        basis = cbind(basis, v)
+      }
+    }
+    get_dim_reduction = function(X, Y, p){
+      stopifnot(length(Y) == nrow(X))
+      stopifnot(p <= ncol(X))
+      betas = c()
+      U = diag(rep(1,ncol(X)))
+      for (i in 1:p){
+        trunc = (X %*% U)[,i:ncol(X)]
+        Hat = solve(t(trunc) %*% trunc)  %*% t(trunc) # TODO: can't do this! Singularity.
+        beta = rep(0, ncol(X))
+        beta[i:ncol(X)] = Hat %*% Y
+        betas = cbind(betas, U %*% beta)
+        U = create_orthogonal_matrix(betas)
+        stopifnot(length(which(U %*% t(U) > 1e-10)) == ncol(X))
+        X = X - X %*% beta %*% t(beta) / norm(beta, "2")^2
+      }
+      return(betas)
+    }
+    wrapper = function(Y){
+      get_dim_reduction(X, Y, p)
+    }
+    dim_reductions = lapply(Ys, wrapper)
+    
+    # CREATE RANDOM FOREST FOR EACH FEATURE
+    print("Growing the random forest.")
+    library(randomForest)
+    get_forest_from_index = function(idx){
+      model = randomForest(x = X %*% dim_reductions[[idx]], y = Ys[[idx]],
+                           ntree = 1200,
+                           mtry = 3)
+      return(model)
+    }
+    models = lapply(1:length(Ys), get_forest_from_index)
+    return(list("models" = models,
+                "dim_reductions" = dim_reductions,
+                "strategies" = strategies,
+                "stock_names" = stock_names))
+  }
+  result.train = train(dfs.train)
+  models = result.train$models
+  dim_reductions = result.train$dim_reductions
+  
+  ### TEST ###
+  
+  validation = function(dfs, result.train){
+    # CREATE THE X MATRIX, COMMON TO ALL ENSEMBLES
+    X = create_X(dfs, test_days)
+    models = result.train$models
+    dim_reductions = result.train$dim_reductions
+    stock_names = result.train$stock_names
+    strategies = result.train$strategies
+    Ys = create_Y(dfs, test_days, strategies, stock_names)
+    
+    get_error_from_index = function(idx){
+      prediction = as.numeric(predict(models[[idx]], X %*% dim_reductions[[idx]]))
+      Y = Ys[[idx]]
+      return(mean(abs(Y - prediction)))
+    }
+    errors = sapply(1:length(models), get_error_from_index)
+    
+    get_reference_error = function(idx){
+      Y = Ys[[idx]]
+      return(mean(abs(Y)))
+    }
+    reference_errors = sapply(1:length(models), get_reference_error)
+    print(reference_errors)
+    print(errors)
+    return(errors)
+  }
+  result.test = validation(dfs.test, result.train)
+  
+  ### PORTFOLIO CONSTRUCTION ###
+  
+  get_portfolio_from_strategy(strategy){
+    projections = c()
+    for (idx in 1:length(result.train$models)){
+      if(result.train$strategies[[idx]] != strategy){
+        next
+      }
+      code = result.train$stock_names[[idx]]
+      betas = result.train$dim_reductions[[idx]]
+      model = result.train$models[[idx]]
+      
+      # use result.train
+      # predict the 3 stock prices using the top row in X
+      X = create_X(dfs.train, 1)
+      prediction = predict(model, X %*% betas)
+      projections = c(projections, as.numeric(prediction))
+    }
+    # Compute covarience matrix of the Y according to the strategy. (use create_Y)
+    Sigma = NULL # TODO
+    portfolio = projections %*% solve(Sigma)
+    return(portfolio)
+  }
   
   X1 = c()
   X2 = c()
@@ -137,31 +272,6 @@ execute = function(n, test_size = 0.3, filter = codes){
     return(df)
   }
   
-  ### TEST ###
-
-  X = c()
-  Y = c() # 1 day, 2 day, 3 day
-  for (day in test_days){
-    new_row_X = c()
-    new_row_Y = c()
-    for (i in 1:length(dfs.test)){
-      df = dfs.test[[i]]
-      code = codes[[i]]
-      close = log(df$Adj.Close)
-      new_row_X = cbind(new_row_X,
-                        t(close[day] - close[c(day+10, day+6, day+3, day+1)]))
-                        # df$Volume[day]/1e8)
-      if (is.element(code,filter)){
-        new_row_Y = cbind(new_row_Y,
-                          t(close[c(day-1, day-2, day-3, day-4)] - close[day])
-        )
-      }
-    }
-    X = rbind(X, new_row_X)
-    Y = rbind(Y, new_row_Y)
-  }
-  X = cbind(X, 1)
-  
   # Using: Sigma1, Sigma2, Sigma3, beta_hat
   
   Y_hat = X %*% beta_hat
@@ -183,12 +293,10 @@ execute = function(n, test_size = 0.3, filter = codes){
   print(c(a1, a2, a3, a4))
   return(c(a1, a2, a3, a4))
 }
-# new_price("AAPL", 190.00)
-# new_price("IBM", 183.00)
 
 filter = codes[which(!is.element(codes, c("SPY")))]
-filter = c("IBM", "AAPL", "GOOG", "VUSA.AS")
-# filter = c("IBM", "AAPL", "GOOG")
+# filter = c("IBM", "AAPL", "GOOG", "VUSA.AS")
+filter = c("IBM", "AAPL", "GOOG")
 n = 1400
 
 test_performace = FALSE

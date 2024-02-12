@@ -9,7 +9,7 @@
             "SPY", "TSLA", "AMD",
             "QBTS", "RGTI")
   n = Inf # total number of days
-  filter = c("GOOG", "IBM", "RGTI", "AAPL", "VUSA.AS")
+  # filter = c("GOOG", "IBM", "RGTI", "AAPL", "VUSA.AS")
   filter = c("RGTI", "IBM", "VUSA.AS")
   test_size = 0.3
   n_strategies = 5
@@ -59,8 +59,8 @@
   all_indices = (n_strategies+1):(length(common_dates)-10)
   if(test_size > 0){
     print(paste("Using a test / train split of ", 100*test_size, "% test data.", sep = ""))
-    test_days = sample(all_indices[-c(1,2)], floor(length(all_indices)*test_size/3), replace = FALSE)
-    test_days = unique(c(test_days, test_days - 1, test_days - 2))
+    test_days = sample(all_indices[-(1:4)], floor(length(all_indices)*test_size/5), replace = FALSE)
+    test_days = unique(c(test_days, test_days - 1, test_days - 2, test_days - 3, test_days - 4))
     train_days = all_indices[which(!is.element(all_indices,test_days))]
   } else {
     print("Not using test data.")

@@ -7,11 +7,13 @@
             "INTC", "VUSA.AS", "GOOG",
             "NVDA", "META", "AAPL",
             "SPY", "TSLA", "AMD",
-            "SHOP")
-  n = 1400 # total number of days
-  filter = c("AAPL", "GOOG", "VUSA.AS")
-  test_size = 0
-  n_strategies = 4
+            "QBTS", "RGTI")
+  n = Inf # total number of days
+  filter = c("GOOG", "IBM", "RGTI", "AAPL", "VUSA.AS")
+  filter = c("RGTI", "IBM", "VUSA.AS")
+  test_size = 0.3
+  n_strategies = 5
+  regress_on_date = TRUE
 }
 
 
@@ -22,7 +24,7 @@
   df_from_code = function(code){
     df = read.csv(paste("https://query1.finance.yahoo.com/v7/finance/download/",
                           code,
-                          "?period1=1514764800&period2=1798675200&interval=1d&events=history&includeAdjustedClose=true",
+                          "?period1=1483228800&period2=1767225600&interval=1d&events=history&includeAdjustedClose=true",
                           sep = ""))
     return(df[nrow(df):1,])
   }
@@ -32,9 +34,9 @@
     i = which(codes == code)
     raw_dfs[[i]]$Adj.Close[1] = price
     raw_dfs <<- raw_dfs
+    print(paste("Setting price of", code, "to", price))
   }
-  # new_price("AAPL", 190.00)
-  # new_price("IBM", 183.00)
+  # new_price("VUSA.AS", 88.48)
 }
 
 # ----------------- PREPROCESSING --------------------
@@ -49,16 +51,19 @@
     common_dates = common_dates[1:n]
   }
   print(paste("Using", length(common_dates), "days."))
+  print(paste("Until", common_dates[1]))
 }
 
 # ----------------- TRAIN / TEST INDICIES --------------------
 {
   all_indices = (n_strategies+1):(length(common_dates)-10)
   if(test_size > 0){
+    print(paste("Using a test / train split of ", 100*test_size, "% test data.", sep = ""))
     test_days = sample(all_indices[-c(1,2)], floor(length(all_indices)*test_size/3), replace = FALSE)
     test_days = unique(c(test_days, test_days - 1, test_days - 2))
     train_days = all_indices[which(!is.element(all_indices,test_days))]
   } else {
+    print("Not using test data.")
     # test_days = all_indices
     train_days = all_indices
   }
@@ -71,6 +76,11 @@
 
 # ------------------------------------------------------------
 
+if(regress_on_date){
+  print("Regressing on the date.")
+} else {
+  print("Not regressing on the date.")
+}
 create_X = function(days){
   X = c()
   for (day in days){
@@ -85,7 +95,10 @@ create_X = function(days){
     }
     X = rbind(X, new_row_X)
   }
-  X = cbind(X, 1)
+  if (regress_on_date){
+    X = cbind(X, as.numeric(days))
+  }
+  # X = cbind(X, 1)
   return(X)
 }
 
@@ -111,8 +124,9 @@ create_Y = function(days, strategies, stock_names){
 #' @param p: number of features given to the random forest.
 #'             if 0, then use all features.
 #' @return: a list, of lists, each having the same length.
-train = function(p = 0){
+train = function(p = 0, ntree = 1200){ 
   print(paste("p =", p))
+  print(paste("Using", ntree, "trees per model."))
   X = create_X(train_days) # common to all ensembles
   
   # CREATE THE Y VECTORS
@@ -150,7 +164,7 @@ train = function(p = 0){
     U = diag(rep(1,ncol(X)))
     for (i in 1:p){
       trunc = (X %*% U)[,i:ncol(X)]
-      Hat = solve(t(trunc) %*% trunc)  %*% t(trunc) # TODO: can't do this! Singularity.
+      Hat = solve(t(trunc) %*% trunc)  %*% t(trunc)
       beta = rep(0, ncol(X))
       beta[i:ncol(X)] = Hat %*% Y
       betas = cbind(betas, U %*% beta)
@@ -178,7 +192,7 @@ train = function(p = 0){
     dim_reductions = lapply(Ys, wrapper)
   }
   
-  # CREATE RANDOM FOREST FOR EACH FEATURE
+  # CREATE RANDOM FOREST FOR EACH STOCK + STRATEGY
   print("Growing the random forest.")
   library(randomForest)
   get_forest_from_index = function(idx){
@@ -188,8 +202,8 @@ train = function(p = 0){
       features = X
     }
     model = randomForest(x = features, y = Ys[[idx]],
-                         ntree = 1200,
-                         mtry = 3)
+                         ntree = ntree,
+                         mtry = 5)
     return(model)
   }
   models = lapply(1:length(Ys), get_forest_from_index)
@@ -282,7 +296,7 @@ print("Sizing")
 print(portfolio)
 print("Projections")
 print(projections)
-visualize = 1 # The strategy that you would like to visualize
+visualize = 4 # The strategy that you would like to visualize
 barplot(as.numeric(portfolio[visualize,]),
         names.arg = sort(filter),
         main = paste("Strategy:", visualize),

@@ -9,8 +9,8 @@
             "SPY", "TSLA", "AMD",
             "SHOP")
   n = 1400 # total number of days
-  filter = c("AAPL", "GOOG", "VUSA.AS", "MSFT")
-  test_size = 0.3
+  filter = c("AAPL", "GOOG", "VUSA.AS")
+  test_size = 0
   n_strategies = 4
 }
 
@@ -240,6 +240,10 @@ get_portfolio = function(days, strategy){
 ### TEST ###
 
 validation = function(){
+  if(test_size == 0){
+    print("No validation dataset.")
+    return(NULL)
+  }
   Ys = create_Y(test_days, result.train$strategies, result.train$stock_names)
   performances = c()
   for (strategy in 1:n_strategies){
@@ -278,10 +282,10 @@ print("Sizing")
 print(portfolio)
 print("Projections")
 print(projections)
-strategy = 4
-barplot(as.numeric(portfolio[strategy,]),
+visualize = 1 # The strategy that you would like to visualize
+barplot(as.numeric(portfolio[visualize,]),
         names.arg = sort(filter),
-        main = paste("Strategy:", strategy),
+        main = paste("Strategy:", visualize),
         las = 2)
 
 # 

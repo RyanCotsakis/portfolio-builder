@@ -9,17 +9,14 @@
             "SPY", "TSLA", "AMD",
             "QBTS", "RGTI")
   n = Inf # total number of days
-  filter = c("IBM", "MSFT", "RGTI")
+  filter = c("IBM", "RGTI", "NVDA")
   load_model = "quantum_4strategies"
   # load_model = "blue_chip"
   test_size = 0
   n_strategies = 4
   regress_on_date = TRUE
   visualize = 4
-  if (exists("visualize_strategy")){
-    visualize_strategy(visualize)
-    portfolio
-  }
+  # visualize_strategy(visualize)
 }
 
 

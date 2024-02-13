@@ -9,10 +9,9 @@
             "SPY", "TSLA", "AMD",
             "QBTS", "RGTI")
   n = Inf # total number of days
-  # filter = c("GOOG", "IBM", "RGTI", "AAPL", "VUSA.AS")
-  filter = c("RGTI", "IBM", "VUSA.AS")
+  filter = c("IBM", "VUSA.AS", "RGTI")
   test_size = 0.3
-  n_strategies = 5
+  n_strategies = 4
   regress_on_date = TRUE
 }
 
@@ -238,15 +237,16 @@ get_portfolio = function(days, strategy){
     projections = cbind(projections, as.numeric(prediction))
     
     Y = Ys[[idx]]
-    Y_vectors = cbind(Y_vectors, Y)
+    Y_vectors = cbind(Y_vectors, Y - mean(Y))
   }
   # Compute covarience matrix of the Y according to the strategy. (use create_Y)
-  Sigma = t(Y_vectors) %*% Y_vectors
+  Sigma = t(Y_vectors) %*% Y_vectors / length(all_indices)
   portfolio = data.frame(projections %*% solve(Sigma))
   projections = data.frame(projections)
   names(portfolio) = names(projections) = filter
   return(list("portfolio" = portfolio / rowSums(abs(portfolio)),
-              "projections" = projections
+              "projections" = projections,
+              "signals" = projections / sqrt(diag(Sigma))
               ))
 }
 
@@ -287,20 +287,33 @@ result.train = train()
 print("Validation:")
 print(validation())
 portfolio = c()
+signals = c()
 projections = c()
 for(strategy in 1:n_strategies){
-  portfolio = rbind(portfolio, get_portfolio(1, strategy)$portfolio)
-  projections = rbind(projections, get_portfolio(1, strategy)$projections)
+  day = 1 # today = 1. Yesterday = 2
+  portfolio = rbind(portfolio, get_portfolio(day, strategy)$portfolio)
+  signals = rbind(signals, get_portfolio(day, strategy)$signals)
+  projections = rbind(projections, get_portfolio(day, strategy)$projections)
 }
+
+visualize_strategy = function(strategy){
+  par(mfrow = c(1,2))
+  barplot(as.numeric(portfolio[strategy,]),
+          names.arg = sort(filter),
+          main = "Portfolio",
+          las = 2)
+  barplot(as.numeric(signals[strategy,]),
+          names.arg = sort(filter),
+          main = paste("Signals: T =", strategy),
+          las = 2)
+}
+
 print("Sizing")
 print(portfolio)
 print("Projections")
 print(projections)
-visualize = 4 # The strategy that you would like to visualize
-barplot(as.numeric(portfolio[visualize,]),
-        names.arg = sort(filter),
-        main = paste("Strategy:", visualize),
-        las = 2)
+visualize_strategy(3)
+
 
 # US markets: 9:30 - 16:00
 # EUR markets: 9:00 - 17:30

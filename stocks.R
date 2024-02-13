@@ -6,12 +6,12 @@
   codes = c("AMZN", "IBM", "MSFT",
             "INTC", "VUSA.AS", "GOOG",
             "NVDA", "META", "AAPL",
-            "SPY", "TSLA", "AMD")
-            # "QBTS", "RGTI")
+            "SPY", "TSLA", "AMD",
+            "QBTS", "RGTI")
   n = Inf # total number of days
-  filter = c("IBM", "MSFT")
-  # load_model = "quantum_4strategies"
-  load_model = "blue_chip"
+  filter = c("IBM", "MSFT", "RGTI")
+  load_model = "quantum_4strategies"
+  # load_model = "blue_chip"
   test_size = 0
   n_strategies = 4
   regress_on_date = TRUE
@@ -205,7 +205,6 @@ train = function(p = 0, ntree = 1200){
   
   # CREATE RANDOM FOREST FOR EACH STOCK + STRATEGY
   print("Growing the random forest.")
-  library(randomForest)
   get_forest_from_index = function(idx){
     if (p > 0 && p < ncol(X)){
       features = X %*% dim_reductions[[idx]]
@@ -297,6 +296,8 @@ validation = function(){
               ))
 }
 
+
+library(randomForest)
 if (exists("load_model") && !exists("result.train")){
   print(paste("Loading ", load_model, ".", sep = ""))
   load(paste("C:/Users/Ryan/Documents/misc_code/stocks/", load_model, ".RData", sep = ""))

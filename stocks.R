@@ -6,13 +6,20 @@
   codes = c("AMZN", "IBM", "MSFT",
             "INTC", "VUSA.AS", "GOOG",
             "NVDA", "META", "AAPL",
-            "SPY", "TSLA", "AMD",
-            "QBTS", "RGTI")
+            "SPY", "TSLA", "AMD")
+            # "QBTS", "RGTI")
   n = Inf # total number of days
-  filter = c("IBM", "VUSA.AS", "RGTI")
-  test_size = 0.3
+  filter = c("IBM", "MSFT")
+  # load_model = "quantum_4strategies"
+  load_model = "blue_chip"
+  test_size = 0
   n_strategies = 4
   regress_on_date = TRUE
+  visualize = 4
+  if (exists("visualize_strategy")){
+    visualize_strategy(visualize)
+    portfolio
+  }
 }
 
 
@@ -40,8 +47,13 @@
 
 # ----------------- PREPROCESSING --------------------
 {
-  filter = sort(filter)
-  stopifnot(all(is.element(filter,codes)))
+  if (exists("filter") && length(filter) > 1){
+    filter = sort(filter)
+    stopifnot(all(is.element(filter,codes)))
+  } else {
+    print("Not filtering.")
+    filter = codes
+  }
   get_dates = function(df){
     return(df$Date)
   }
@@ -215,6 +227,7 @@ train = function(p = 0, ntree = 1200){
 ### PORTFOLIO CONSTRUCTION ###
 
 get_portfolio = function(days, strategy){
+  filter = sort(filter)
   projections = c()
   X = create_X(days)
   Ys = create_Y(all_indices, result.train$strategies, result.train$stock_names)
@@ -224,6 +237,9 @@ get_portfolio = function(days, strategy){
       next
     }
     code = result.train$stock_names[[idx]]
+    if(!is.element(code, filter)){
+      next
+    }
     betas = result.train$dim_reductions[[idx]]
     model = result.train$models[[idx]]
     
@@ -265,7 +281,7 @@ validation = function(){
     stock_names = result.train$stock_names
     strategies = result.train$strategies
     
-    inds = which(strategies == strategy)
+    inds = which(strategies == strategy & is.element(stock_names, filter))
     Y_vectors = c()
     for (i in inds){
       Y_vectors = cbind(Y_vectors, Ys[[i]])
@@ -281,8 +297,15 @@ validation = function(){
               ))
 }
 
-print("Training.")
-result.train = train()
+if (exists("load_model") && !exists("result.train")){
+  print(paste("Loading ", load_model, ".", sep = ""))
+  load(paste("C:/Users/Ryan/Documents/misc_code/stocks/", load_model, ".RData", sep = ""))
+} else if(!exists("result.train")){
+  print("Training.")
+  result.train = train()
+} else {
+  print("Using existing result.train.")
+}
 
 print("Validation:")
 print(validation())
@@ -312,7 +335,7 @@ print("Sizing")
 print(portfolio)
 print("Projections")
 print(projections)
-visualize_strategy(3)
+visualize_strategy(visualize)
 
 
 # US markets: 9:30 - 16:00

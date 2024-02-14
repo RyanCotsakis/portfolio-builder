@@ -1,29 +1,46 @@
 # Analyze stock proces using most recent information
-
+library(randomForest)
 
 # ----------------- PARAMETERS ----------------------
 {
-  codes = c("AMZN", "IBM", "MSFT",
-            "INTC", "VUSA.AS", "GOOG",
-            "NVDA", "META", "AAPL",
-            "SPY", "TSLA", "AMD",
-            "QBTS", "RGTI")
+  ### Choose pretrained forests ---------------------
+  
+  load_model = "bluechip0214"
+  
+  ### If there's no pre-trained model, specify codes.
+  new_codes = unique(c(
+    "AMZN", "IBM", "MSFT", "INTC", "GOOG", "NVDA", "META", "AAPL",
+    "SPY", "TSLA", "AMD", "RGTI"
+  ))
+  
   n = Inf # total number of days
-  filter = c("IBM", "RGTI", "NVDA")
-  load_model = "quantum_4strategies"
-  # load_model = "blue_chip"
-  test_size = 0
-  n_strategies = 4
-  regress_on_date = TRUE
-  visualize = 4
-  # visualize_strategy(visualize)
+  filter = c("IBM", "NVDA") # optional filter
+  test_size = 0 # set to 0 to use all data
+  n_strategies = 5 # number of days to forecast
+  regress_on_date = TRUE # use the date as a covariate
+  visualize = 5
+  tryCatch(visualize_strategy(visualize), error = function(e){message(paste("Warning:", e))})
 }
 
 
 # ----------------- RAW DATASETS --------------------
 {
-  print("Downloading data.")
+  if (exists("load_model") && !exists("result.train")){
+    setwd("C:/Users/Ryan/Documents/misc_code/stocks/")
+    print(paste("Loading ", load_model, ".", sep = ""))
+    load(paste(load_model, ".RData", sep = ""))
+  }
+  
+  if(exists("result.train")){
+    codes = result.train$codes
+    stopifnot(n_strategies <= max(result.train$strategies))
+    stopifnot(all(is.element(filter, result.train$stock_names)))
+  } else {
+    codes = new_codes
+  }
   codes = sort(codes)
+  
+  print("Downloading data.")
   df_from_code = function(code){
     df = read.csv(paste("https://query1.finance.yahoo.com/v7/finance/download/",
                           code,
@@ -89,6 +106,7 @@ if(regress_on_date){
 } else {
   print("Not regressing on the date.")
 }
+
 create_X = function(days){
   X = c()
   for (day in days){
@@ -131,7 +149,7 @@ create_Y = function(days, strategies, stock_names){
 
 #' @param p: number of features given to the random forest.
 #'             if 0, then use all features.
-#' @return: a list, of lists, each having the same length.
+#' @return: a list, of lists, each having the same length. $codes is the codes used to train.
 train = function(p = 0, ntree = 1200){ 
   print(paste("p =", p))
   print(paste("Using", ntree, "trees per model."))
@@ -217,7 +235,8 @@ train = function(p = 0, ntree = 1200){
   return(list("models" = models,
               "dim_reductions" = if (p > 0 && p < ncol(X)) dim_reductions else NULL,
               "strategies" = strategies,
-              "stock_names" = stock_names))
+              "stock_names" = stock_names,
+              "codes" = codes))
 }
 
 ### PORTFOLIO CONSTRUCTION ###
@@ -262,7 +281,6 @@ get_portfolio = function(days, strategy){
               ))
 }
 
-
 ### TEST ###
 
 validation = function(){
@@ -293,12 +311,7 @@ validation = function(){
               ))
 }
 
-
-library(randomForest)
-if (exists("load_model") && !exists("result.train")){
-  print(paste("Loading ", load_model, ".", sep = ""))
-  load(paste("C:/Users/Ryan/Documents/misc_code/stocks/", load_model, ".RData", sep = ""))
-} else if(!exists("result.train")){
+if(!exists("result.train")){
   print("Training.")
   result.train = train()
 } else {
@@ -318,6 +331,7 @@ for(strategy in 1:n_strategies){
 }
 
 visualize_strategy = function(strategy){
+  stopifnot(all(names(portfolio) == filter))
   par(mfrow = c(1,2))
   barplot(as.numeric(portfolio[strategy,]),
           names.arg = sort(filter),

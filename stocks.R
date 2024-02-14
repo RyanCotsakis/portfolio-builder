@@ -5,16 +5,16 @@ library(randomForest)
 {
   ### Choose pretrained forests ---------------------
   
-  load_model = "bluechip0214"
+  # load_model = "bluechip0214"
   
   ### If there's no pre-trained model, specify codes.
   new_codes = unique(c(
     "AMZN", "IBM", "MSFT", "INTC", "GOOG", "NVDA", "META", "AAPL",
-    "SPY", "TSLA", "AMD", "RGTI"
+    "SPY", "TSLA", "RGTI", "VWDRY", "GE"
   ))
   
   n = Inf # total number of days
-  filter = c("IBM", "NVDA") # optional filter
+  filter = c("IBM", "NVDA", "GE", "VWDRY", "SPY") # optional filter
   test_size = 0 # set to 0 to use all data
   n_strategies = 5 # number of days to forecast
   regress_on_date = TRUE # use the date as a covariate
@@ -34,7 +34,6 @@ library(randomForest)
   if(exists("result.train")){
     codes = result.train$codes
     stopifnot(n_strategies <= max(result.train$strategies))
-    stopifnot(all(is.element(filter, result.train$stock_names)))
   } else {
     codes = new_codes
   }
@@ -68,6 +67,10 @@ library(randomForest)
     print("Not filtering.")
     filter = codes
   }
+  if (exists("result.train")){
+    stopifnot(all(is.element(filter, result.train$stock_names)))
+  }
+  
   get_dates = function(df){
     return(df$Date)
   }

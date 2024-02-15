@@ -5,7 +5,7 @@ library(randomForest)
 {
   ### Choose pretrained forests ---------------------
   
-  # load_model = "bluechip0214"
+  load_model = "bluechip0214"
   
   ### If there's no pre-trained model, specify codes.
   new_codes = unique(c(
@@ -14,12 +14,14 @@ library(randomForest)
   ))
   
   n = Inf # total number of days
-  filter = c("IBM", "NVDA", "MSFT") # optional filter
-  test_size = 0.3 # set to 0 to use all data
+  filter = c("IBM", "NVDA", "META") # optional filter
+  test_size = 0 # set to 0 to use all data. Parameter in [0,1)
   test_block_size = 10 # test data comes in blocks of size test_block_size
   n_strategies = 5 # number of days to forecast
   regress_on_date = TRUE # use the date as a covariate
-  visualize = 4
+  risk_param = 0.5 # amount of mitigatable risk. Parameter in [0,1].
+  
+  visualize = 3
   tryCatch(visualize_strategy(visualize), error = function(e){message(paste("Warning:", e))})
 }
 
@@ -86,7 +88,7 @@ library(randomForest)
 # ----------------- TRAIN / TEST INDICIES --------------------
 {
   all_indices = (n_strategies+1):(length(common_dates)-10)
-  if(test_size > 0){
+  if(test_size > 0 && !exists("result.train")){
     print(paste("Using a test / train split of ", 100*test_size, "% test data.", sep = ""))
     test_days = sample(all_indices[-(1:(test_block_size - 1))],
                        max(floor(length(all_indices)*test_size/test_block_size), 1),
@@ -95,7 +97,7 @@ library(randomForest)
       test_days = unique(c(test_days, test_days - 1))
     }
     train_days = all_indices[which(!is.element(all_indices,test_days))]
-  } else {
+  } else if (!exists("result.train")){
     print("Not using test data.")
     # test_days = all_indices
     train_days = all_indices
@@ -249,7 +251,7 @@ train = function(p = 0, ntree = 1200){
 
 ### PORTFOLIO CONSTRUCTION ###
 
-get_portfolio = function(days, strategy){
+get_portfolio = function(days, strategy, risk = 0){
   filter = sort(filter)
   projections = c()
   X = create_X(days)
@@ -281,7 +283,9 @@ get_portfolio = function(days, strategy){
   # Compute covarience matrix of the Y according to the strategy. (use create_Y)
   Sigma = t(Y_vectors) %*% Y_vectors / length(all_indices)
   portfolio = data.frame(projections %*% solve(Sigma))
+  portfolio = portfolio / rowSums(abs(portfolio))
   projections = data.frame(projections)
+  portfolio = (1 - risk) * portfolio + risk * projections / rowSums(abs(projections))
   names(portfolio) = names(projections) = filter
   return(list("portfolio" = portfolio / rowSums(abs(portfolio)),
               "projections" = projections,
@@ -291,7 +295,7 @@ get_portfolio = function(days, strategy){
 
 ### TEST ###
 
-validation = function(){
+validation = function(risk = 0){
   if(test_size == 0){
     print("No validation dataset.")
     return(NULL)
@@ -299,7 +303,7 @@ validation = function(){
   Ys = create_Y(test_days, result.train$strategies, result.train$stock_names)
   performances = c()
   for (strategy in 1:n_strategies){
-    portfolios = get_portfolio(test_days, strategy)$portfolio
+    portfolios = get_portfolio(test_days, strategy, risk)$portfolio
     stock_names = result.train$stock_names
     strategies = result.train$strategies
     
@@ -334,13 +338,13 @@ if(!exists("result.train")){
 }
 
 print("Validation:")
-print(validation())
+print(validation(risk_param))
 portfolio = c()
 signals = c()
 projections = c()
 for(strategy in 1:n_strategies){
   day = 1 # today = 1. Yesterday = 2
-  portfolio = rbind(portfolio, get_portfolio(day, strategy)$portfolio)
+  portfolio = rbind(portfolio, get_portfolio(day, strategy, risk_param)$portfolio)
   signals = rbind(signals, get_portfolio(day, strategy)$signals)
   projections = rbind(projections, get_portfolio(day, strategy)$projections)
 }

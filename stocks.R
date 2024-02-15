@@ -10,15 +10,15 @@ library(randomForest)
   ### If there's no pre-trained model, specify codes.
   new_codes = unique(c(
     "AMZN", "IBM", "MSFT", "INTC", "GOOG", "NVDA", "META", "AAPL",
-    "SPY", "TSLA", "RGTI", "VWDRY", "GE"
+    "SPY", "TSLA", "VWDRY"
   ))
   
   n = Inf # total number of days
-  filter = c("IBM", "NVDA", "GE", "VWDRY", "SPY") # optional filter
-  test_size = 0 # set to 0 to use all data
+  filter = c("IBM", "NVDA", "MSFT") # optional filter
+  test_size = 0.3 # set to 0 to use all data
   n_strategies = 5 # number of days to forecast
   regress_on_date = TRUE # use the date as a covariate
-  visualize = 5
+  visualize = 4
   tryCatch(visualize_strategy(visualize), error = function(e){message(paste("Warning:", e))})
 }
 
@@ -308,8 +308,15 @@ validation = function(){
   }
   performances = data.frame(performances)
   names(performances) = as.factor(1:n_strategies)
-  return(list("means" = colMeans(performances),
-              "sds" = sapply(performances, sd)/sqrt(nrow(performances)),
+  mu = colMeans(performances)
+  sigma2 = sapply(performances, var)
+  n = 5 * 52 / (1:n_strategies)
+  annual = exp(n * (mu + sigma2/2)) # lognormal mean
+  annual_sd = sqrt((exp(n* sigma2) - 1) * exp(n * (2*mu + sigma2))) # lognormal variance
+  return(list("mu" = mu,
+              "mu_sd" = sapply(performances, sd)/sqrt(nrow(performances)),
+              "annual" = annual,
+              "annual_sd" = annual_sd,
               "n" = nrow(performances)
               ))
 }

@@ -16,6 +16,7 @@ library(randomForest)
   n = Inf # total number of days
   filter = c("IBM", "NVDA", "MSFT") # optional filter
   test_size = 0.3 # set to 0 to use all data
+  test_block_size = 10 # test data comes in blocks of size test_block_size
   n_strategies = 5 # number of days to forecast
   regress_on_date = TRUE # use the date as a covariate
   visualize = 4
@@ -87,8 +88,12 @@ library(randomForest)
   all_indices = (n_strategies+1):(length(common_dates)-10)
   if(test_size > 0){
     print(paste("Using a test / train split of ", 100*test_size, "% test data.", sep = ""))
-    test_days = sample(all_indices[-(1:4)], floor(length(all_indices)*test_size/5), replace = FALSE)
-    test_days = unique(c(test_days, test_days - 1, test_days - 2, test_days - 3, test_days - 4))
+    test_days = sample(all_indices[-(1:(test_block_size - 1))],
+                       max(floor(length(all_indices)*test_size/test_block_size), 1),
+                       replace = FALSE)
+    for (i in 1:(test_block_size - 1)){
+      test_days = unique(c(test_days, test_days - 1))
+    }
     train_days = all_indices[which(!is.element(all_indices,test_days))]
   } else {
     print("Not using test data.")

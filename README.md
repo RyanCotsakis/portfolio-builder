@@ -1,10 +1,10 @@
-### Stock Market Analysis with Random Forests
+## Stock Market Analysis with Random Forests
 
 This repository contains R code for conducting stock market analysis using random forest models. The code downloads historical stock price data from Yahoo Finance, preprocesses it, and trains random forest models to predict future stock prices. 
 
 **Features:**
 
-1. **Data Collection:** The code downloads historical stock price data from Yahoo Finance for specified stock codes.
+1. **Data Collection:** The code downloads historical stock price data from Yahoo Finance for specified stocks.
 
 2. **Preprocessing:** It preprocesses the data, ensuring only dates common to all stocks are used for analysis.
 
@@ -14,11 +14,11 @@ This repository contains R code for conducting stock market analysis using rando
 
 5. **Validation:** If a validation set is specified, the code evaluates the performance of the portfolios on the test set.
 
-6. **Visualization:** Visualization functions are provided to visualize the constructed portfolios and signals for a given strategy.
+6. **Visualization:** Visualization functions are provided to visualize the constructed portfolios and signals for a given forecast horizon.
 
 **Usage:**
 
-1. Set parameters such as stock codes, number of days for analysis, and test dataset size in the code.
+1. Set parameters such as stock symbols, number of days for analysis, and test dataset size in the code.
 
 2. Run the code to perform data collection, preprocessing, model training, and portfolio construction.
 
@@ -26,7 +26,7 @@ This repository contains R code for conducting stock market analysis using rando
 
 **Dependencies:**
 
-- randomForest R package
+- [randomForest](https://cran.r-project.org/web/packages/randomForest/) R package
 
 **Authors:**
 

@@ -5,19 +5,21 @@ library(randomForest)
 {
   ### Choose pretrained forests ---------------------
   
-  load_model = "bluechip0214"
+  # TODO
   
   ### If there's no pre-trained model, specify codes.
   new_codes = unique(c(
-    "AMZN", "IBM", "MSFT", "INTC", "GOOG", "NVDA", "META", "AAPL",
-    "SPY", "TSLA", "VWDRY"
+    "AMZN", "IBM", "MSFT", "GOOG", "NVDA", "META", "SPY", "ABBV", "VWDRY", "PG"
   ))
   
-  n = Inf # total number of days
-  filter = c("IBM", "NVDA", "META") # optional filter
-  test_size = 0 # set to 0 to use all data. Parameter in [0,1)
+  n = Inf # total number of days. Set to Inf to use all
+  # filter = c("GOOG", "IBM") # optional filter
+  test_size = 0.3 # set to 0 to use all data. Parameter in [0,1)
   test_block_size = 10 # test data comes in blocks of size test_block_size
   n_strategies = 5 # number of days to forecast
+  p = 100 # number of features before RFE. Set to Inf to use all.
+  iterate_times = 1 # use recursive feature elimination (RFE) if > 1.
+  ntree = 1200
   regress_on_date = TRUE # use the date as a covariate
   risk_param = 0.5 # amount of mitigatable risk. Parameter in [0,1].
   
@@ -82,13 +84,14 @@ library(randomForest)
     common_dates = common_dates[1:n]
   }
   print(paste("Using", length(common_dates), "days."))
-  print(paste("Until", common_dates[1]))
+  print(paste("Until ", common_dates[1], ".", sep = ""))
 }
 
 # ----------------- TRAIN / TEST INDICIES --------------------
 {
   all_indices = (n_strategies+1):(length(common_dates)-10)
   if(test_size > 0 && !exists("result.train")){
+    set.seed(111)
     print(paste("Using a test / train split of ", 100*test_size, "% test data.", sep = ""))
     test_days = sample(all_indices[-(1:(test_block_size - 1))],
                        max(floor(length(all_indices)*test_size/test_block_size), 1),
@@ -134,7 +137,6 @@ create_X = function(days){
   if (regress_on_date){
     X = cbind(X, as.numeric(days))
   }
-  # X = cbind(X, 1)
   return(X)
 }
 
@@ -160,10 +162,13 @@ create_Y = function(days, strategies, stock_names){
 #' @param p: number of features given to the random forest.
 #'             if 0, then use all features.
 #' @return: a list, of lists, each having the same length. $codes is the codes used to train.
-train = function(p = 0, ntree = 1200){ 
-  print(paste("p =", p))
+train = function(p = Inf, ntree = 1200){
   print(paste("Using", ntree, "trees per model."))
-  X = create_X(train_days) # common to all ensembles
+  X = create_X(train_days) # common to all ensembles 
+  if (p > ncol(X)){
+    p = ncol(X)
+  }
+  print(paste("p =", p))
   
   # CREATE THE Y VECTORS
   strategies = rep(1:n_strategies, length(filter))
@@ -171,79 +176,41 @@ train = function(p = 0, ntree = 1200){
   Ys = create_Y(train_days, strategies, stock_names)
   stopifnot(length(Ys) == length(strategies))
   
-  # CREATE THE FEATURES
-  create_orthogonal_matrix = function(basis){
-    eye = diag(rep(1,nrow(basis)))
-    for (i in 1:ncol(basis)){
-      basis[,i] = basis[,i] / norm(basis[,i], type="2")
-    }
-    while(TRUE){
-      j = ncol(basis) + 1
-      if (j > nrow(basis)){
-        return(basis)
-      }
-      v = rnorm(ncol(X))
-      v = v / norm(v,type="2")
-      for (i in 1:(j-1)){
-        u = basis[,i]
-        v = v - as.numeric(t(u) %*% v)*u
-        v = v/norm(v,type="2")
-      }
-      basis = cbind(basis, v)
-    }
-  }
-  
-  get_dim_reduction = function(X, Y, p){
-    stopifnot(length(Y) == nrow(X))
-    stopifnot(p <= ncol(X))
-    betas = c()
-    U = diag(rep(1,ncol(X)))
-    for (i in 1:p){
-      trunc = (X %*% U)[,i:ncol(X)]
-      Hat = solve(t(trunc) %*% trunc)  %*% t(trunc)
-      beta = rep(0, ncol(X))
-      beta[i:ncol(X)] = Hat %*% Y
-      betas = cbind(betas, U %*% beta)
-      for (j in 1:50){
-        U = create_orthogonal_matrix(betas)
-        max_err = max(abs(U %*% t(U) - diag(rep(1, ncol(X)))))
-        if (max_err < 1e-7){
-          break
-        }
-        print(paste("U not orthonormal. Try:", j))
-        print(paste("Maximum error:", max_err))
-        if (j == 50){
-          stop()
-        }
-      }
-      X = X - X %*% beta %*% t(beta) / norm(beta, "2")^2
-    }
-    return(betas)
-  }
-  wrapper = function(Y){
-    get_dim_reduction(X, Y, p)
-  }
-  if (p > 0 && p < ncol(X)){
-    print("Reducing dimension.")
-    dim_reductions = lapply(Ys, wrapper)
+  # DIMENSION REDUCTION
+  if (p < ncol(X)){
+    print("Reducing dimensionality.")
+    normalize = diag(1/apply(X, MARGIN = 2, sd))
+    dim_reduction = normalize %*% prcomp(X %*% normalize)$rotation[,1:p]
+  } else {
+    dim_reduction = NULL
   }
   
   # CREATE RANDOM FOREST FOR EACH STOCK + STRATEGY
   print("Growing the random forest.")
+  if (iterate_times > 1){
+    print("Using feature elimination.")
+  }
   get_forest_from_index = function(idx){
-    if (p > 0 && p < ncol(X)){
-      features = X %*% dim_reductions[[idx]]
+    if (!is.null(dim_reduction)){
+      features = X %*% dim_reduction
     } else {
       features = X
     }
-    model = randomForest(x = features, y = Ys[[idx]],
-                         ntree = ntree,
-                         mtry = 5)
+    inds_to_keep = 1:ncol(features)
+    for (i in 1:iterate_times){
+      model = randomForest(x = features[,inds_to_keep], y = Ys[[idx]],
+                           ntree = ntree,
+                           mtry = 5)
+      model$rfe = inds_to_keep
+      inds_to_keep = inds_to_keep[
+        order(model$importance, decreasing = TRUE)[1:ceiling(length(model$importance)*2/3)]
+        ]
+    }
     return(model)
   }
   models = lapply(1:length(Ys), get_forest_from_index)
   return(list("models" = models,
-              "dim_reductions" = if (p > 0 && p < ncol(X)) dim_reductions else NULL,
+              "dim_reduction" = dim_reduction,
               "strategies" = strategies,
               "stock_names" = stock_names,
               "codes" = codes))
@@ -257,6 +224,7 @@ get_portfolio = function(days, strategy, risk = 0){
   X = create_X(days)
   Ys = create_Y(all_indices, result.train$strategies, result.train$stock_names)
   Y_vectors = c()
+  pcs = result.train$dim_reduction
   for (idx in 1:length(result.train$models)){
     if(result.train$strategies[[idx]] != strategy){
       next
@@ -265,16 +233,15 @@ get_portfolio = function(days, strategy, risk = 0){
     if(!is.element(code, filter)){
       next
     }
-    betas = result.train$dim_reductions[[idx]]
     model = result.train$models[[idx]]
     
-    # use result.train
-    # predict the 3 stock prices using the top row in X
-    if (is.null(betas)){
-      prediction = predict(model, X)
+    if (is.null(pcs)){
+      feature_matrix = X
     } else {
-      prediction = predict(model, X %*% betas)
+      feature_matrix =  X %*% pcs
     }
+    feature_matrix = feature_matrix[,model$rfe]
+    prediction = predict(model, feature_matrix)
     projections = cbind(projections, as.numeric(prediction))
     
     Y = Ys[[idx]]
@@ -332,7 +299,7 @@ validation = function(risk = 0){
 
 if(!exists("result.train")){
   print("Training.")
-  result.train = train()
+  result.train = train(p, ntree)
 } else {
   print("Using existing result.train.")
 }

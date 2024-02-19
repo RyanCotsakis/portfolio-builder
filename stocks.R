@@ -5,7 +5,7 @@ library(randomForest)
 {
   ### Choose pretrained forests ---------------------
   
-  # TODO
+  load_model = "bluechip0217"
   
   ### If there's no pre-trained model, specify codes.
   new_codes = unique(c(
@@ -14,7 +14,7 @@ library(randomForest)
   
   n = Inf # total number of days. Set to Inf to use all
   # filter = c("GOOG", "IBM") # optional filter
-  test_size = 0.3 # set to 0 to use all data. Parameter in [0,1)
+  test_size = 0 # set to 0 to use all data. Parameter in [0,1)
   test_block_size = 10 # test data comes in blocks of size test_block_size
   n_strategies = 5 # number of days to forecast
   p = 100 # number of features before RFE. Set to Inf to use all.
@@ -23,7 +23,7 @@ library(randomForest)
   regress_on_date = TRUE # use the date as a covariate
   risk_param = 0.5 # amount of mitigatable risk. Parameter in [0,1].
   
-  visualize = 3
+  visualize = 1
   tryCatch(visualize_strategy(visualize), error = function(e){message(paste("Warning:", e))})
 }
 
